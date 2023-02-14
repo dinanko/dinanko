@@ -1,0 +1,29 @@
+DECLARE
+   v_output           CLOB := NULL;
+   v_owner   VARCHAR2 (30) := 'RSDUADMIN';
+   v_type    VARCHAR2 (30) := 'VIEW';
+   v_name    VARCHAR2 (30); 
+
+BEGIN
+   v_name := 'some_name_template';
+   FOR tt IN (SELECT owner, object_name oname, object_type otype 
+                FROM dba_objects
+               WHERE owner LIKE v_owner
+                 AND object_name LIKE v_name
+                 AND object_type LIKE v_type)
+   LOOP
+     BEGIN
+      SELECT DBMS_METADATA.get_ddl (tt.otype,
+                                    tt.oname,
+                                    tt.owner
+                                   )
+        INTO v_output
+        FROM DUAL;
+       
+      -- v_output := replace( replace (replace (v_output, '"RSDUADMIN"', 'RSDUADMIN'), chr(10)||'FROM ', ' FROM '),  chr(10)||'FROM'||chr(10), ' FROM ');
+
+      -- if REGEXP_LIKE ( substr (v_output, 1, instr (v_output, ' FROM ')) ,'DEFINE_ALIAS') then
+      
+        DBMS_OUTPUT.put_line ( v_output );        
+    END LOOP;
+END;
