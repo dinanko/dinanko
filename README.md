@@ -18,13 +18,5 @@ Here are some ideas to get you started:
 - 🕊️ Dove
 - 📖
 -->
-- 🔎 I’m looking for a team where my skills would be useful and where I can grow as a **Data Engineer**.
-- My current skills are:
-  - some experience of working and administrating **Oracle** DB (mostly Oracle 11g XE, Oracle 18c XE), **PostgreSQL**
-  - writing scripts on **PL/SQL**, **PL/pgSQL**
-  - writing **bash-scripts**
-  - using **docker**, hg mercurial, redmine
-  - familiar with **git**, **jira**, **confluence**
-  
-
- ☮️
+It's my personal repos to store useful scripts
+☮️
