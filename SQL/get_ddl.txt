@@ -1,3 +1,103 @@
+select DBMS_METADATA.get_ddl ('OBJ TYPE', 'OBJ NAME','OBJ OWNER') from dual;
+
+--DDL
+select	owner, object_name, object_type, status,
+		DBMS_METADATA.get_ddl (decode (object_type, 'PACKAGE', 'PACKAGE_SPEC','PACKAGE BODY', 'PACKAGE_BODY',object_type), object_name, owner) 
+	from all_objects
+	where 
+	and object_type not like '%PARTITION%' -- not regexp_like (object_type,'PARTITION|PACKAGE')
+	and object_name like '%OBJ_NAME%' 
+	and owner like 'OWNER';
+
+--права
+select * from DBA_TAB_PRIVS
+	where 1=1
+	and table_name like '%OBJ NAME%'
+	and owner like 'OWNER';
+--Fetch the DDL For All Object Grants /*выполняется медленнее, чем выборка из DBA_TAB_PRIVS*/
+SELECT DBMS_METADATA.GET_DEPENDENT_DDL('OBJECT_GRANT', 'OBJ NAME','OWNER') FROM DUAL; 	
+/*--Fetch the DDL For All System Grants Granted To user
+SELECT DBMS_METADATA.GET_GRANTED_DDL('SYSTEM_GRANT','SCOTT') FROM DUAL;	*/	
+	
+--partitions
+select table_name, partition_name, subpartition_count, high_value, tablespace_name, logging.compression, parent_table_partition
+	from DBA_TAB_PARTITIONS 
+	where table_name like '%OBJ NAME%' and table_owner like 'OWNER';
+	
+--objects
+select owner, object_name, object_type, status from all_objects
+	where 1=1
+	and object_type not like '%PARTITION%'
+	and object_name like '%OBJ NAME%'
+	and owner in ('OWNER')
+	order by 3,1;
+
+--object partitions
+select owner, object_name, subobject_name, object_type, status from all_objects
+	where 1=1
+	and object_type like '%PARTITION%'
+	and object_name like '%OBJ NAME%'
+	and owner in ('OWNER')
+	order by 4,3;
+	
+	
+--COLUMNS
+/*select owner, table_name, column_name, data_type, data_length, data_precision, data_scale, nullable, char_length, char_used 
+	from ALL_TAB_COLUMNS
+	where 1=1
+	and table_name like '%OBJ NAME%'
+	and owner like 'OWNER'
+	--and column_name like 'COL NAME'
+	order by column_id;
+*/
+select cl.owner, cl.table_name, cl.column_name, cl.data_type, cl.data_length, cl.data_precision, cl.data_scale, cl.nullable, cl.char_length, cl.char_used, cm.comments 
+	from ALL_TAB_COLUMNS cl left join ALL_COL_COMMENTS cm on cl.owner = cm.owner and cl.table_name = cm.table_name and cl.column_name = cm.column_name
+	where 1=1
+	and cl.table_name like '%OBJ NAME%'
+	and cl.owner like 'OWNER'
+	--and column_name like 'COL NAME'
+	order by cl.column_id;
+	
+--UNUSED COLUMNS	
+select * from DBA_UNUSED_COL_TABS where /*owner = 'OWNER' and */ table_name like 'OBJ NAME%';
+alter table OWNER.OBJ_NAME NOCOMPRESS;
+alter table OWNER.OBJ_NAME drop unused columns /*CHECKPOINT 250*/;
+alter table OWNER.OBJ_NAME COMPRESS;
+/*alter table table_name move;*/
+	
+	
+--INDEXES
+select * from DBA_INDEXES 
+	where 1=1
+	and table_name like '%OBJ NAME%'
+	and owner like 'OWNER';
+
+--SYNONYMS
+select * from ALL_SYNONYMS 
+	where table_name like '%OBJ NAME%'
+
+--ограничения	
+select * from ALL_CONSTRAINTS
+	where 1=1
+	and table_name like '%OBJ NAME%'
+	and owner like 'OWNER';
+	
+--struct diff
+WITH 
+T1 as (select cl.owner, cl.table_name, cl.column_name, cl.data_type, cl.data_length, cl.data_precision, cl.data_scale, cl.nullable, cl.char_length, cl.char_used 
+		from ALL_TAB_COLUMNS cl 
+		where cl.table_name = 'OBJ1' and owner = 'OWNER1'),
+T2 as (select cl.owner, cl.table_name, cl.column_name, cl.data_type, cl.data_length, cl.data_precision, cl.data_scale, cl.nullable, cl.char_length, cl.char_used 
+		from ALL_TAB_COLUMNS cl 
+		where cl.table_name = 'OBJ2' and owner = 'OWNER2')		
+select t1.column_name, t1.data_type||' '||t1.data_length data_type1, t2.column_name, t2.data_type||' '||t2.data_length data_type2,
+	(case when t1.column_name != t2.column_name or  t1.data_type||' '||t1.data_length !=  t2.data_type||' '||t2.data_length then 'FALSE' else 'TRUE' end) is_ok
+from t1 full join t2 on (t1.column_name = t2.column_name)
+union 
+select '!!! '||owner||'.'||table_name, null, 'Has unused cols!', null, 'NO'
+	from DBA_UNUSED_COL_TABS where owner in ('OWNER1', 'OWNER2') and  table_name in ('OBJ1','OBJ2') ;
+
+--===============================================================
 DECLARE
    v_output           CLOB := NULL;
    v_owner   VARCHAR2 (30) := 'RSDUADMIN';
@@ -20,10 +120,55 @@ BEGIN
         INTO v_output
         FROM DUAL;
        
-      -- v_output := replace( replace (replace (v_output, '"RSDUADMIN"', 'RSDUADMIN'), chr(10)||'FROM ', ' FROM '),  chr(10)||'FROM'||chr(10), ' FROM ');
+      -- v_output := replace( v_output, '<some text>', '<target>');
 
-      -- if REGEXP_LIKE ( substr (v_output, 1, instr (v_output, ' FROM ')) ,'DEFINE_ALIAS') then
+      -- if REGEXP_LIKE ( v_output, ' some text') then
       
         DBMS_OUTPUT.put_line ( v_output );        
     END LOOP;
 END;
+/
+
+--Convert DBA_OBJECTS.OBJECT_TYPE to DBMS_METADATA object type:
+    select
+        owner,
+        --Java object names may need to be converted with DBMS_JAVA.LONGNAME.
+        --That code is not included since many database don't have Java installed.
+        object_name,
+        decode(object_type,
+            'DATABASE LINK',      'DB_LINK',
+            'JOB',                'PROCOBJ',
+            'RULE SET',           'PROCOBJ',
+            'RULE',               'PROCOBJ',
+            'EVALUATION CONTEXT', 'PROCOBJ',
+            'CREDENTIAL',         'PROCOBJ',
+            'CHAIN',              'PROCOBJ',
+            'PROGRAM',            'PROCOBJ',
+            'PACKAGE',            'PACKAGE_SPEC',
+            'PACKAGE BODY',       'PACKAGE_BODY',
+            'TYPE',               'TYPE_SPEC',
+            'TYPE BODY',          'TYPE_BODY',
+            'MATERIALIZED VIEW',  'MATERIALIZED_VIEW',
+            'QUEUE',              'AQ_QUEUE',
+            'JAVA CLASS',         'JAVA_CLASS',
+            'JAVA TYPE',          'JAVA_TYPE',
+            'JAVA SOURCE',        'JAVA_SOURCE',
+            'JAVA RESOURCE',      'JAVA_RESOURCE',
+            'XML SCHEMA',         'XMLSCHEMA',
+            object_type
+        ) object_type
+    from dba_objects
+    where owner in ('OWNER1')
+        --These objects are included with other object types.
+        and object_type not in ('INDEX PARTITION','INDEX SUBPARTITION',
+           'LOB','LOB PARTITION','TABLE PARTITION','TABLE SUBPARTITION')
+        --Ignore system-generated types that support collection processing.
+        and not (object_type = 'TYPE' and object_name like 'SYS_PLSQL_%')
+        --Exclude nested tables, their DDL is part of their parent table.
+        and (owner, object_name) not in (select owner, table_name from dba_nested_tables)
+        --Exclude overflow segments, their DDL is part of their parent table.
+        and (owner, object_name) not in (select owner, table_name from dba_tables where iot_type = 'IOT_OVERFLOW')
+)
+order by owner, object_type, object_name;
+
+
